@@ -2,8 +2,8 @@ package buildlogic
 
 import io.github.z4kn4fein.semver.Version
 import ir.amirab.installer.InstallerTargetFormat
+import ir.amirab.util.platform.Arch
 import ir.amirab.util.platform.Platform
-import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import java.io.File
 
 object CiUtils {
@@ -36,7 +36,8 @@ object CiUtils {
                 }
             }
         }.name.lowercase()
-        return "${packageName}_${appVersion}_${platformName}_${systemArch}.${fileExtension}"
+        val archName = Arch.getCurrentArch().name
+        return "${packageName}_${appVersion}_${platformName}_${archName}.${fileExtension}"
     }
 
     fun getFileOfPackagedTarget(

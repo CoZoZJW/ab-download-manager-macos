@@ -7,9 +7,11 @@ import com.abdownloadmanager.desktop.utils.*
 import com.abdownloadmanager.desktop.utils.mvi.ContainsEffects
 import com.abdownloadmanager.desktop.utils.mvi.supportEffects
 import arrow.optics.copy
+import com.abdownloadmanager.desktop.pages.settings.configurable.BooleanConfigurable
+import com.abdownloadmanager.desktop.storage.AppSettingsStorage
 import com.abdownloadmanager.desktop.storage.PageStatesStorage
 import com.abdownloadmanager.resources.Res
-import com.abdownloadmanager.resources.*
+import com.abdownloadmanager.utils.FileIconProvider
 import com.arkivanov.decompose.ComponentContext
 import ir.amirab.downloader.DownloadManagerEvents
 import ir.amirab.downloader.downloaditem.DownloadJobStatus
@@ -19,6 +21,10 @@ import ir.amirab.downloader.monitor.*
 import ir.amirab.util.compose.StringSource
 import ir.amirab.util.compose.asStringSource
 import ir.amirab.util.compose.asStringSourceWithARgs
+import ir.amirab.util.flow.combineStateFlows
+import ir.amirab.util.flow.mapStateFlow
+import ir.amirab.util.flow.mapTwoWayStateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -42,20 +48,58 @@ data class SingleDownloadPagePropertyItem(
 class SingleDownloadComponent(
     ctx: ComponentContext,
     val downloadItemOpener: DownloadItemOpener,
-    val onDismiss: () -> Unit,
+    private val onDismiss: () -> Unit,
     val downloadId: Long,
 ) : BaseComponent(ctx),
     ContainsEffects<SingleDownloadEffects> by supportEffects(),
     KoinComponent {
     private val downloadSystem: DownloadSystem by inject()
+    private val appSettings: AppSettingsStorage by inject()
+    val fileIconProvider: FileIconProvider by inject()
     private val singleDownloadPageStateToPersist by lazy {
         get<PageStatesStorage>().downloadPage
     }
     private val downloadMonitor: IDownloadMonitor = downloadSystem.downloadMonitor
     private val downloadManager: DownloadManager = downloadSystem.downloadManager
-    val itemStateFlow = downloadMonitor.downloadListFlow.map {
-        it.firstOrNull { it.id == downloadId }
-    }.stateIn(scope, SharingStarted.Eagerly, null)
+
+    val itemStateFlow = MutableStateFlow<IDownloadItemState?>(null)
+    private val globalShowCompletionDialog: StateFlow<Boolean> = appSettings.showDownloadCompletionDialog
+    private val itemShouldShowCompletionDialog: MutableStateFlow<Boolean?> = MutableStateFlow(null as Boolean?)
+    private val shouldShowCompletionDialog = combineStateFlows(
+        globalShowCompletionDialog,
+        itemShouldShowCompletionDialog,
+    ) { global, item ->
+        item ?: global
+    }
+
+    private fun shouldShowCompletionDialog(): Boolean {
+        return shouldShowCompletionDialog.value
+    }
+
+    init {
+        downloadMonitor
+            .downloadListFlow
+            .conflate()
+            .onEach {
+                val item = it.firstOrNull { it.id == downloadId }
+                val previous = itemStateFlow.value
+                if (previous is ProcessingDownloadItemState && item is CompletedDownloadItemState) {
+                    // if It was opened to show progress
+                    if (shouldShowCompletionDialog()) {
+                        itemStateFlow.value = item
+                    } else {
+                        itemStateFlow.value = null
+                        // app component tries to create this component if user want to auto open completion dialog and this component is not created yet
+                        // so we keep this component active a while to prevent create new component
+                        // this prevents opening this window if global [appSettings.showDownloadCompletionDialog] is true but user explicitly tells that he don't want to open completion dialog for this item
+                        delay(100)
+                        close()
+                    }
+                } else {
+                    itemStateFlow.value = item
+                }
+            }.launchIn(scope)
+    }
 
     private val _showPartInfo = MutableStateFlow(singleDownloadPageStateToPersist.value.showPartInfo)
     val showPartInfo = _showPartInfo.asStateFlow()
@@ -68,8 +112,9 @@ class SingleDownloadComponent(
         }
     }
 
-    val extraDownloadInfo: StateFlow<List<SingleDownloadPagePropertyItem>> = itemStateFlow
-        .filterNotNull()
+    // TODO this can be moved to a nested component to reduce system resource usage
+    val extraDownloadProgressInfo: StateFlow<List<SingleDownloadPagePropertyItem>> = itemStateFlow
+        .filterIsInstance<ProcessingDownloadItemState>()
         .map {
             buildList {
                 add(SingleDownloadPagePropertyItem(Res.string.name.asStringSource(), it.name.asStringSource()))
@@ -80,48 +125,41 @@ class SingleDownloadComponent(
                         convertSizeToHumanReadable(it.contentLength)
                     )
                 )
-                when (it) {
-                    is CompletedDownloadItemState -> {
-                    }
-
-                    is ProcessingDownloadItemState -> {
-                        add(
-                            SingleDownloadPagePropertyItem(
-                                Res.string.download_page_downloaded_size.asStringSource(),
-                                convertBytesToHumanReadable(it.progress).orEmpty().asStringSource()
-                            )
-                        )
-                        add(
-                            SingleDownloadPagePropertyItem(
-                                Res.string.speed.asStringSource(),
-                                convertSpeedToHumanReadable(it.speed).asStringSource()
-                            )
-                        )
-                        add(
-                            SingleDownloadPagePropertyItem(
-                                Res.string.time_left.asStringSource(),
-                                (it.remainingTime?.let { remainingTime ->
+                add(
+                    SingleDownloadPagePropertyItem(
+                        Res.string.download_page_downloaded_size.asStringSource(),
+                        convertBytesToHumanReadable(it.progress).orEmpty().asStringSource()
+                    )
+                )
+                add(
+                    SingleDownloadPagePropertyItem(
+                        Res.string.speed.asStringSource(),
+                        convertSpeedToHumanReadable(it.speed).asStringSource()
+                    )
+                )
+                add(
+                    SingleDownloadPagePropertyItem(
+                        Res.string.time_left.asStringSource(),
+                        (it.remainingTime?.let { remainingTime ->
                             convertTimeRemainingToHumanReadable(remainingTime, TimeNames.ShortNames)
-                                }.orEmpty()).asStringSource()
-                            )
-                        )
-                        add(
-                            SingleDownloadPagePropertyItem(
-                                Res.string.resume_support.asStringSource(),
-                                when (it.supportResume) {
-                                    true -> Res.string.yes.asStringSource()
-                                    false -> Res.string.no.asStringSource()
-                                    null -> Res.string.unknown.asStringSource()
-                                },
-                                when (it.supportResume) {
-                                    true -> SingleDownloadPagePropertyItem.ValueType.Success
-                                    false -> SingleDownloadPagePropertyItem.ValueType.Error
-                                    null -> SingleDownloadPagePropertyItem.ValueType.Normal
-                                }
-                            )
-                        )
-                    }
-                }
+                        }.orEmpty()).asStringSource()
+                    )
+                )
+                add(
+                    SingleDownloadPagePropertyItem(
+                        Res.string.resume_support.asStringSource(),
+                        when (it.supportResume) {
+                            true -> Res.string.yes.asStringSource()
+                            false -> Res.string.no.asStringSource()
+                            null -> Res.string.unknown.asStringSource()
+                        },
+                        when (it.supportResume) {
+                            true -> SingleDownloadPagePropertyItem.ValueType.Success
+                            false -> SingleDownloadPagePropertyItem.ValueType.Error
+                            null -> SingleDownloadPagePropertyItem.ValueType.Normal
+                        }
+                    )
+                )
             }
         }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
@@ -154,7 +192,7 @@ class SingleDownloadComponent(
         }
     }
 
-    fun openFile() {
+    fun openFile(alsoClose: Boolean = true) {
         val itemState = itemStateFlow.value
         scope.launch {
             if (itemState is CompletedDownloadItemState) {
@@ -162,12 +200,14 @@ class SingleDownloadComponent(
                     downloadItemOpener.openDownloadItem(downloadId)
                 }
             }
-            onDismiss()
+            if (alsoClose) {
+                onDismiss()
+            }
         }
     }
 
     fun toggle() {
-        val state = itemStateFlow.value as ProcessingDownloadItemState ?: return
+        val state = itemStateFlow.value as? ProcessingDownloadItemState ?: return
         scope.launch {
             if (state.status is DownloadJobStatus.IsActive) {
                 downloadSystem.manualPause(downloadId)
@@ -178,7 +218,7 @@ class SingleDownloadComponent(
     }
 
     fun resume() {
-        val state = itemStateFlow.value as ProcessingDownloadItemState ?: return
+        val state = itemStateFlow.value as? ProcessingDownloadItemState ?: return
         scope.launch {
             if (state.status is DownloadJobStatus.CanBeResumed) {
                 downloadSystem.manualResume(downloadId)
@@ -187,7 +227,7 @@ class SingleDownloadComponent(
     }
 
     fun pause() {
-        val state = itemStateFlow.value as ProcessingDownloadItemState ?: return
+        val state = itemStateFlow.value as? ProcessingDownloadItemState ?: return
         scope.launch {
             if (state.status is DownloadJobStatus.IsActive) {
                 downloadSystem.manualPause(downloadId)
@@ -249,6 +289,21 @@ class SingleDownloadComponent(
 
     val settings by lazy {
         listOf(
+            BooleanConfigurable(
+                title = Res.string.download_item_settings_show_download_completion_dialog.asStringSource(),
+                description = Res.string.download_item_settings_show_download_completion_dialog_description.asStringSource(),
+                backedBy = itemShouldShowCompletionDialog.mapTwoWayStateFlow(
+                    map = {
+                        it ?: globalShowCompletionDialog.value
+                    },
+                    unMap = { it }
+                ),
+                describe = {
+                    (if (it) Res.string.enabled
+                    else Res.string.enabled)
+                        .asStringSource()
+                },
+            ),
             IntConfigurable(
                 title = Res.string.download_item_settings_thread_count.asStringSource(),
                 description = Res.string.download_item_settings_thread_count_description.asStringSource(),

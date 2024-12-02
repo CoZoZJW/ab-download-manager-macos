@@ -26,9 +26,9 @@ jobs:
           os=$(echo "${{ runner.os }}-${{ runner.arch }}" | tr "[:upper:]" "[:lower:]")
           echo "RUNNER_OS=$os" >> "$GITHUB_ENV"
           
-          version="17.0.10"
-          build="b1207.14"
-          base_file_name="jbrsdk_jcef"
+          version="17.0.12"
+          build="b1207.37"
+          base_file_name="jbrsdk"
           file_extension=".tar.gz"
           
           download_links=(

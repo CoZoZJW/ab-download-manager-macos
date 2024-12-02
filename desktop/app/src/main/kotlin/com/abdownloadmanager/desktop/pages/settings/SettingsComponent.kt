@@ -106,6 +106,28 @@ fun useSparseFileAllocation(appRepository: AppRepository): BooleanConfigurable {
     )
 }
 
+fun showDownloadFinishWindow(settingsStorage: AppSettingsStorage): BooleanConfigurable {
+    return BooleanConfigurable(
+        title = Res.string.settings_show_completion_dialog.asStringSource(),
+        description = Res.string.settings_show_completion_dialog_description.asStringSource(),
+        backedBy = settingsStorage.showDownloadCompletionDialog,
+        describe = {
+            (if (it) Res.string.enabled else Res.string.disabled).asStringSource()
+        },
+    )
+}
+
+fun autoShowDownloadProgressWindow(settingsStorage: AppSettingsStorage): BooleanConfigurable {
+    return BooleanConfigurable(
+        title = Res.string.settings_show_download_progress_dialog.asStringSource(),
+        description = Res.string.settings_show_download_progress_dialog_description.asStringSource(),
+        backedBy = settingsStorage.showDownloadProgressDialog,
+        describe = {
+            (if (it) Res.string.enabled else Res.string.disabled).asStringSource()
+        },
+    )
+}
+
 fun speedLimitConfig(appRepository: AppRepository): SpeedLimitConfigurable {
     return SpeedLimitConfigurable(
         title = Res.string.settings_global_speed_limiter.asStringSource(),
@@ -374,8 +396,10 @@ class SettingsComponent(
                     speedLimitConfig(appRepository),
                     threadCountConfig(appRepository),
                     dynamicPartDownloadConfig(appRepository),
+                    autoShowDownloadProgressWindow(appSettings),
+                    showDownloadFinishWindow(appSettings),
                     useServerLastModified(appRepository),
-                    useSparseFileAllocation(appRepository)
+                    useSparseFileAllocation(appRepository),
                 )
             }
         }
