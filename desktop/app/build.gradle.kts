@@ -21,9 +21,6 @@ dependencies {
     implementation(libs.decompose)
     implementation(libs.decompose.jbCompose)
 
-    //because we don't have material design, but we use ripple effect
-    implementation(libs.compose.material.rippleEffect)
-
     implementation(libs.koin.core)
 
     implementation(libs.kotlin.serialization.json)
@@ -45,7 +42,7 @@ dependencies {
     implementation(libs.androidx.datastore)
 
     implementation(libs.aboutLibraries.core)
-
+    implementation(libs.markdownRenderer.core)
     implementation(libs.composeFileKit) {
         exclude(group = "net.java.dev.jna")
     }
@@ -64,14 +61,21 @@ dependencies {
 
     implementation(project(":integration:server"))
     implementation(project(":desktop:shared"))
-    implementation(project(":desktop:tray"))
-    implementation(project(":desktop:custom-window-frame"))
+    implementation(project(":desktop:app-utils"))
+
+    implementation(project(":desktop:tray:common"))
+    if (Platform.getCurrentPlatform() == Platform.Desktop.Windows) {
+        implementation(project(":desktop:tray:windows"))
+    } else {
+        implementation(project(":desktop:tray:linux"))
+    }
+
+    implementation(project(":shared:app"))
     implementation(project(":shared:app-utils"))
     implementation(project(":shared:utils"))
     implementation(project(":shared:updater"))
     implementation(project(":shared:auto-start"))
     implementation(project(":shared:nanohttp4k"))
-    implementation(project(":shared:resources"))
 }
 
 aboutLibraries {
@@ -181,12 +185,16 @@ buildConfig {
         }
     )
     buildConfigField(
+        "APP_DISPLAY_NAME",
+        provider { getPrettifiedAppName() }
+    )
+    buildConfigField(
         "APP_VERSION",
         provider { getAppVersionString() }
     )
     buildConfigField(
         "APP_NAME",
-        provider { getPrettifiedAppName() }
+        provider { getAppName() }
     )
     buildConfigField(
         "PROJECT_WEBSITE",
@@ -198,6 +206,18 @@ buildConfig {
         "PROJECT_SOURCE_CODE",
         provider {
             "https://github.com/amir1376/ab-download-manager"
+        }
+    )
+    buildConfigField(
+        "PROJECT_GITHUB_OWNER",
+        provider {
+            "amir1376"
+        }
+    )
+    buildConfigField(
+        "PROJECT_GITHUB_REPO",
+        provider {
+            "ab-download-manager"
         }
     )
     buildConfigField(
