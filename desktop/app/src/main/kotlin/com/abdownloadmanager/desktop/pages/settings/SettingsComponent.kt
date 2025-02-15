@@ -139,6 +139,36 @@ fun trackDeletedFilesOnDisk(appRepository: AppRepository): BooleanConfigurable {
     )
 }
 
+fun ignoreSSLCertificates(appSettingsStorage: AppSettingsStorage): BooleanConfigurable {
+    return BooleanConfigurable(
+        title = Res.string.settings_ignore_ssl_certificates.asStringSource(),
+        description = Res.string.settings_ignore_ssl_certificates_description.asStringSource(),
+        backedBy = appSettingsStorage.ignoreSSLCertificates,
+        describe = {
+            if (it) {
+                Res.string.enabled.asStringSource()
+            } else {
+                Res.string.disabled.asStringSource()
+            }
+        },
+    )
+}
+
+fun useCategoryByDefault(appSettingsStorage: AppSettingsStorage): BooleanConfigurable {
+    return BooleanConfigurable(
+        title = Res.string.settings_use_category_by_default.asStringSource(),
+        description = Res.string.settings_use_category_by_default_description.asStringSource(),
+        backedBy = appSettingsStorage.useCategoryByDefault,
+        describe = {
+            if (it) {
+                Res.string.enabled.asStringSource()
+            } else {
+                Res.string.disabled.asStringSource()
+            }
+        },
+    )
+}
+
 fun speedUnit(appRepository: AppRepository, scope: CoroutineScope): EnumConfigurable<ConvertSizeConfig> {
     return EnumConfigurable(
         title = Res.string.settings_download_speed_unit.asStringSource(),
@@ -472,12 +502,14 @@ class SettingsComponent(
                     useAverageSpeedConfig(appRepository),
                     speedLimitConfig(appRepository),
                     threadCountConfig(appRepository),
+                    useCategoryByDefault(appSettings),
                     dynamicPartDownloadConfig(appRepository),
                     autoShowDownloadProgressWindow(appSettings),
                     showDownloadFinishWindow(appSettings),
                     useServerLastModified(appRepository),
                     useSparseFileAllocation(appRepository),
                     trackDeletedFilesOnDisk(appRepository),
+                    ignoreSSLCertificates(appSettings),
                 )
             }
         }
